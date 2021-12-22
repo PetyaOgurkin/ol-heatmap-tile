@@ -1,0 +1,29 @@
+{
+  "name": "ol-heatmap-tile",
+  "version": "1.0.0",
+  "description": "ol plugin for rendering monochrome images",
+  "main": "dist/ol-heatmap-tile.js",
+  "scripts": {
+    "build": "npx webpack"
+  },
+  "keywords": [
+    "heatmap",
+    "interpolation",
+    "gfs",
+    "weather visualization",
+    "ventusky",
+    "windy",
+    "ol"
+  ],
+  "repository": "github:PetyaOgurkin/ol-heatmap-tile",
+  "author": "PetyaOgurkin",
+  "license": "MIT",
+  "devDependencies": {
+    "ol": "^6.9.0",
+    "webpack": "^5.65.0",
+    "webpack-cli": "^4.9.1"
+  },
+  "peerDependencies": {
+    "ol": "^6.9.0"
+  }
+}

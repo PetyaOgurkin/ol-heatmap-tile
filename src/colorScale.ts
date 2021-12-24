@@ -1,7 +1,11 @@
 const HexRegExp = /^#([0-9a-fA-F]{3,6})$/
 const RgbRegExp = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/
 
-const hexToArray = (str) => {
+export type ColorSchema = [number, string]
+type RgbArray = [number, number, number]
+type ConvertedColorSchema = [number, RgbArray]
+
+const hexToArray = (str: string): RgbArray => {
     if (str.length === 4) {
         return [
             parseInt(str[1] + str[1], 16),
@@ -19,12 +23,12 @@ const hexToArray = (str) => {
     }
 }
 
-const rgbToArray = (str) => {
-    const match = str.match(RgbRegExp)
+const rgbToArray = (str: string): RgbArray => {
+    const match = str.match(RgbRegExp)!
     return [+match[1] % 255, +match[2] % 255, +match[3] % 255]
 }
 
-const convertSchema = (schema) => {
+const convertSchema = (schema: ColorSchema[]): ConvertedColorSchema[] => {
     return schema.map(([value, color]) => {
         if (color.search(HexRegExp) != -1) {
             return [value, hexToArray(color)]
@@ -36,7 +40,7 @@ const convertSchema = (schema) => {
     })
 }
 
-const getRange = (value, schema) => {
+const getRange = (value: number, schema: ConvertedColorSchema[]): RgbArray | [ConvertedColorSchema, ConvertedColorSchema] => {
     if (value < schema[0][0]) {
         return schema[0][1]
     }
@@ -48,15 +52,15 @@ const getRange = (value, schema) => {
     return schema[schema.length - 1][1]
 }
 
-const normalizeValue = (value, min, max) => (value - min) / (max - min)
+const normalizeValue = (value: number, min: number, max: number): number => (value - min) / (max - min)
 
-const interpolate = (value, left, right) => Math.round(left + (right - left) * value);
+const interpolate = (value: number, left: number, right: number): number => Math.round(left + (right - left) * value);
 
-const getRgb = (value, left, right) => `rgb(${interpolate(value, left[0], right[0])},${interpolate(value, left[1], right[1])},${interpolate(value, left[2], right[2])})`
+const getRgb = (value: number, left: RgbArray, right: RgbArray): string => `rgb(${interpolate(value, left[0], right[0])},${interpolate(value, left[1], right[1])},${interpolate(value, left[2], right[2])})`
 
-export const colorScale = (schema) => {
+export const colorScale = (schema: ColorSchema[]) => {
     const convertedSchema = convertSchema(schema);
-    return (value) => {
+    return (value: number) => {
         const range = getRange(value, convertedSchema)
         if (range.length === 3) {
             return `rgb(${range[0]},${range[1]},${range[2]})`

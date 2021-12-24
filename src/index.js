@@ -1,1 +1,0 @@
-export { HeatmapTile } from './HeatmapTile'

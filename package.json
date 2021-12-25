@@ -1,6 +1,6 @@
 {
   "name": "ol-heatmap-tile",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "ol plugin for rendering monochrome images",
   "main": "cjs/index.js",
   "module": "esm/index.js",

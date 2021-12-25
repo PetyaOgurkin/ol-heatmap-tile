@@ -41,7 +41,7 @@ export class HeatmapTile extends WebGLTile {
     private dataBbox: Bbox
     private renderBbox: Bbox
     private url?: string
-    private grid: Grid = new Uint8Array()
+    private grid: Grid = new Uint8Array(0)
     private width: number = 0
     private part: number = 0
     private renderValues: boolean

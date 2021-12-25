@@ -75,15 +75,27 @@
     };
 
     class HeatmapTile extends WebGLTile__default["default"] {
-      grid = new Uint8Array();
-      width = 0;
-      part = 0;
-      size = 256;
-
       constructor(options) {
         super({ ...options.olOptions,
           visible: false
         });
+        this.tileGrid = void 0;
+        this.projection = void 0;
+        this.colorSchema = void 0;
+        this.compression = void 0;
+        this.dataBbox = void 0;
+        this.renderBbox = void 0;
+        this.url = void 0;
+        this.grid = new Uint8Array(0);
+        this.width = 0;
+        this.part = 0;
+        this.renderValues = void 0;
+        this.valuesFont = void 0;
+        this.valuesColor = void 0;
+        this.valueMiniMaxes = void 0;
+        this.valueRoundDigits = void 0;
+        this.size = 256;
+        this.colors = void 0;
         this.renderValues = options.renderValues || false;
         this.tileGrid = options.tileGrid || undefined;
         this.projection = options.projection || "EPSG:3857";

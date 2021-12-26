@@ -1,6 +1,6 @@
 # ol-heatmap-tile
 
-ol plugin for rendering monochrome images
+ol plugin for rendering grayscale images
 
 [live demo](https://petyaogurkin.github.io/ol-heatmap-tile/examples)
 

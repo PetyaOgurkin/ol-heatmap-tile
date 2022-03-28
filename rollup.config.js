@@ -20,11 +20,11 @@ const config = {
             'ol/proj': 'ol.proj',
             'ol/source/DataTile': 'ol.source.DataTile',
             'ol/layer/WebGLTile': 'ol.layer.WebGLTile',
-            'ol/tilegrid/TileGrid': 'ol.tilegrid.TileGrid'
+            'ol/tilegrid/TileGrid': 'ol.tilegrid.TileGrid',
         },
         name: 'HeatmapTile',
     },
-    external: ['ol', 'ol/proj', 'ol/source/DataTile', 'ol/layer/WebGLTile', 'ol/tilegrid/TileGrid'],
+    external: ['ol', 'ol/proj', 'ol/source/DataTile', 'ol/layer/WebGLTile', 'ol/tilegrid/TileGrid',],
     plugins: [
         nodeResolve({
             browser: true,

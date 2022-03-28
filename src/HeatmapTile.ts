@@ -1,26 +1,27 @@
-import { Projection, toLonLat } from "ol/proj";
+import { toLonLat, transform } from "ol/proj";
 import DataTile from "ol/source/DataTile";
 import WebGLTile from "ol/layer/WebGLTile";
 import { colorScale, ColorSchema } from "./colorScale";
 import TileGrid from "ol/tilegrid/TileGrid";
-
 
 type Grid = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array
 
 type Data = {
     readonly grid: Grid
     readonly width: number
+    readonly height: number
 }
 
 type Bbox = [number, number, number, number]
 
-interface Options {
+export interface HeatmapTileOptions {
     readonly data?: Data
     readonly dataBbox?: Bbox
     readonly url?: string
     readonly renderBbox?: Bbox
     readonly tileGrid?: TileGrid
-    readonly projection?: string | Projection
+    readonly projection?: string
+    readonly dataProjection?: string
     readonly compression?: number
     readonly colorSchema?: ColorSchema[]
     readonly renderValues?: boolean
@@ -35,7 +36,8 @@ interface Options {
 export class HeatmapTile extends WebGLTile {
 
     private tileGrid: TileGrid | undefined
-    private projection: string | Projection
+    private projection: string
+    private dataProjection: string
     private colorSchema: ColorSchema[]
     private compression: number
     private dataBbox: Bbox
@@ -43,7 +45,8 @@ export class HeatmapTile extends WebGLTile {
     private url?: string
     private grid: Grid = new Uint8Array(0)
     private width: number = 0
-    private part: number = 0
+    private height: number = 0
+    private part: number[] = [0, 0]
     private renderValues: boolean
     private valuesFont: string
     private valuesColor: string
@@ -52,12 +55,13 @@ export class HeatmapTile extends WebGLTile {
     private size: number = 256
     private colors: Function
 
-    constructor(options: Options) {
+    constructor(options: HeatmapTileOptions) {
         super({ ...options.olOptions, visible: false });
 
         this.renderValues = options.renderValues || false
         this.tileGrid = options.tileGrid || undefined;
         this.projection = options.projection || "EPSG:3857";
+        this.dataProjection = options.dataProjection || "EPSG:4326";
         this.colorSchema = options.colorSchema || [
             [0, '#CD0074'],
             [21, '#7209AB'],
@@ -115,6 +119,7 @@ export class HeatmapTile extends WebGLTile {
     setData(data: Data) {
         this.grid = data.grid;
         this.width = data.width;
+        this.height = data.height;
         this._updatePart()
         this._renderTiles()
     }
@@ -140,6 +145,11 @@ export class HeatmapTile extends WebGLTile {
         this.valueRoundDigits = valueRoundDigits;
     }
 
+    getValueFromCoord(x: number, y: number) {
+        const coord = transform([x, y], this.projection, this.dataProjection)
+        return this._getGridValue(coord[0], coord[1])
+    }
+
     getValueFromLonLat(lon: number, lat: number) {
         return this._scaleValue(this._getGridValue(lon, lat))
     }
@@ -156,8 +166,10 @@ export class HeatmapTile extends WebGLTile {
     }
 
     private _updatePart() {
-        if (this.width && this.dataBbox) {
-            this.part = Math.round(this.width / Math.abs(this.dataBbox[2] - this.dataBbox[0]))
+        if (this.height && this.width && this.dataBbox) {
+            const dx = this.dataBbox[2] < this.dataBbox[0] ? (180 - this.dataBbox[0]) + (180 + this.dataBbox[2]) : Math.abs(this.dataBbox[2] - this.dataBbox[0])
+            const dy = Math.abs(this.dataBbox[3] - this.dataBbox[1])
+            this.part = [dx / this.width, dy / this.height]
         }
     }
 
@@ -179,7 +191,7 @@ export class HeatmapTile extends WebGLTile {
                     imageArray[i / 4] = imageData[i];
                 }
 
-                this.setData({ grid: imageArray, width: img.width })
+                this.setData({ grid: imageArray, width: img.width, height: img.height })
             }
         }
         if (this.url) {
@@ -196,10 +208,12 @@ export class HeatmapTile extends WebGLTile {
 
             this.setSource(
                 new DataTile({
+                    wrapX: true,
                     loader,
                     projection: this.projection,
                     ...(this.tileGrid) && { tileGrid: this.tileGrid },
-                    transition: 0
+                    transition: 0,
+                    interpolate: true
                 })
             )
             this.setVisible(true)
@@ -217,10 +231,14 @@ export class HeatmapTile extends WebGLTile {
         const half = this.compression / 2;
 
         const bboxConditionFunc = this._getBboxConditionFunc()
+        const transformFunc = this._getTransformCoordFunc()
 
         return (z: number, x: number, y: number) => {
 
-            const tileGrid = this.getSource().getTileGrid();
+            const tileGrid = this.getSource()?.getTileGrid();
+            if (!tileGrid) {
+                throw Error('oops')
+            }
             const tileGridOrigin = tileGrid.getOrigin(z);
             const tileSizeAtResolution = this.size * tileGrid.getResolution(z);
             const bbox = [
@@ -247,15 +265,31 @@ export class HeatmapTile extends WebGLTile {
 
             for (let i = 0; i <= this.size; i += this.compression) {
                 for (let j = 0; j <= this.size; j += this.compression) {
-                    const point = toLonLat([bbox[0] + step * (i + half), bbox[1] + step * (j + half)], this.projection);
+                    const point = transformFunc(bbox[0] + step * (i + half), bbox[1] + step * (j + half))
                     if (bboxConditionFunc(point[0], point[1])) {
                         const value = this._getGridValue(point[0], point[1])
-                        pixelRenderFunc(value, i, j);
+                        if (value || value === 0) {
+                            pixelRenderFunc(value, i, j);
+                        }
                     }
                 }
             }
+
             return Promise.resolve(new Uint8Array(context.getImageData(0, 0, this.size, this.size).data.buffer));
         }
+    }
+
+    private _getTransformCoordFunc() {
+        if (this.projection === this.dataProjection) {
+            return (x: number, y: number) => [x, y]
+        }
+
+        if (this.dataProjection === 'EPSG:4326') {
+            return (x: number, y: number) => toLonLat([x, y], this.projection);
+        }
+
+
+        return (x: number, y: number) => transform([x, y], this.projection, this.dataProjection)
     }
 
     private _getBboxConditionFunc() {
@@ -267,21 +301,38 @@ export class HeatmapTile extends WebGLTile {
         return (lon: number, lat: number) => lon >= this.renderBbox[0] && lon <= this.renderBbox[2] && lat >= this.renderBbox[1] && lat <= this.renderBbox[3]
     }
 
+
     private _getGridValue(lon: number, lat: number) {
-        const x = lat;
-        const y = this.dataBbox[2] < this.dataBbox[0] && lon <= this.dataBbox[2] ? lon + 360 : lon;
 
-        const x1 = Math.floor(x * this.part) / this.part
-        const x2 = Math.ceil(x * this.part) / this.part
-        const y1 = Math.floor(y * this.part) / this.part
-        const y2 = Math.ceil(y * this.part) / this.part
+        const x = this.dataBbox[2] < this.dataBbox[0] && lon <= this.dataBbox[2] ? lon + 360 : lon;
+        const y = lat
 
-        const q11 = this.grid[(this.dataBbox[3] - x1) * this.part * this.width + (y1 - this.dataBbox[0]) * this.part];
-        const q12 = this.grid[(this.dataBbox[3] - x1) * this.part * this.width + (y2 - this.dataBbox[0]) * this.part];
-        const q21 = this.grid[(this.dataBbox[3] - x2) * this.part * this.width + (y1 - this.dataBbox[0]) * this.part];
-        const q22 = this.grid[(this.dataBbox[3] - x2) * this.part * this.width + (y2 - this.dataBbox[0]) * this.part];
+        const xCell = (x - this.dataBbox[0]) / this.part[0]
+        const yCell = (y - this.dataBbox[1]) / this.part[1]
 
-        const d = ((x2 - x1) * (y2 - y1))
-        return ((q11 * (x2 - x) * (y2 - y)) / d) + ((q21 * (x - x1) * (y2 - y)) / d) + ((q12 * (x2 - x) * (y - y1)) / d) + ((q22 * (x - x1) * (y - y1)) / d)
+        const xFloorCell = Math.floor(xCell)
+        const xCeilCell = Math.ceil(xCell)
+        const yFloorCell = this.height - Math.floor(yCell)
+        const yCeilCell = this.height - Math.ceil(yCell)
+
+        const x1 = this.dataBbox[0] + xFloorCell * this.part[0]
+        const x2 = this.dataBbox[0] + xCeilCell * this.part[0]
+        const y1 = this.dataBbox[3] - yFloorCell * this.part[1]
+        const y2 = this.dataBbox[3] - yCeilCell * this.part[1]
+
+        const q11 = this.grid[xFloorCell + yFloorCell * this.width]
+        const q12 = this.grid[xFloorCell + yCeilCell * this.width]
+        const q21 = this.grid[xCeilCell + yFloorCell * this.width]
+        const q22 = this.grid[xCeilCell + yCeilCell * this.width]
+
+        const kx1 = (x2 - x)
+        const kx2 = (x2 - x1)
+        const kx3 = (x - x1)
+        const ky1 = (y2 - y1)
+
+        const r1 = (kx1 / kx2 * q11) + (kx3 / (x2 - x1) * q21)
+        const r2 = (kx1 / kx2 * q12) + (kx3 / (x2 - x1) * q22)
+
+        return ((y2 - y) / ky1 * r1) + ((y - y1) / ky1 * r2)
     }
 }

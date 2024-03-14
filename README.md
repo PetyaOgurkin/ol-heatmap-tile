@@ -2,9 +2,7 @@
 
 ol plugin for rendering grayscale images
 
-[live demo](https://petyaogurkin.github.io/ol-heatmap-tile/examples)
-
-![ol-heatmap-tile](examples/cover.jpg)
+![ol-heatmap-tile](assets/cover.jpg)
 
 # Example
 

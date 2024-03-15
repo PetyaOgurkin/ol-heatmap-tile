@@ -27,7 +27,8 @@ export interface HeatmapTileOptions {
   readonly renderValues?: boolean;
   readonly valueMiniMaxes?: [number, number];
   readonly valueRoundDigits?: number;
-  readonly valuesFont?: string;
+  readonly valuesFontFamily?: string;
+  readonly valuesFontSize?: string;
   readonly valuesColor?: string;
   readonly olOptions?: Options;
 }
@@ -46,7 +47,8 @@ export default class HeatmapTile extends WebGLTile {
   private height: number = 0;
   private part: number[] = [0, 0];
   private renderValues: boolean;
-  private valuesFont: string;
+  private valuesFontFamily: string;
+  private valuesFontSize: string;
   private valuesColor: string;
   private valueMiniMaxes: [number, number];
   private valueRoundDigits: number;
@@ -83,7 +85,9 @@ export default class HeatmapTile extends WebGLTile {
     this.renderBbox = options.renderBbox || this.dataBbox;
 
     this.valueRoundDigits = options.valueRoundDigits || 0;
-    this.valuesFont = options.valuesFont || "24px sans-serif";
+    this.valuesFontFamily =
+      options.valuesFontFamily || window.getComputedStyle(document.querySelector("html")!, null).getPropertyValue("font-family");
+    this.valuesFontSize = options.valuesFontSize || "1.2rem";
     this.valuesColor = options.valuesColor || "#fff";
 
     if (options.data) {
@@ -129,8 +133,12 @@ export default class HeatmapTile extends WebGLTile {
     this._loadData();
   }
 
-  setValuesFont(valuesFont: string) {
-    this.valuesFont = valuesFont;
+  setValuesFontFamily(valuesFontFamily: string) {
+    this.valuesFontFamily = valuesFontFamily;
+  }
+
+  setValuesFontSize(valuesFontSize: string) {
+    this.valuesFontFamily = valuesFontSize;
   }
 
   setValuesColor(valuesColor: string) {
@@ -234,7 +242,8 @@ export default class HeatmapTile extends WebGLTile {
     canvas.width = this.size;
     canvas.height = this.size;
     const context = canvas.getContext("2d")!;
-    context.font = this.valuesFont;
+    context.font = `${this.valuesFontSize} ${this.valuesFontFamily}`;
+
     context.fillStyle = this.valuesColor;
 
     const half = this.compression / 2;

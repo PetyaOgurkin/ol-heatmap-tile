@@ -2,6 +2,7 @@ const HexRegExp = /^#([0-9a-fA-F]{3,6})$/;
 const RgbRegExp = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/;
 
 export type ColorSchema = [number, string];
+
 type RgbArray = [number, number, number];
 type ConvertedColorSchema = [number, RgbArray];
 

@@ -1,6 +1,6 @@
 import { toLonLat, transform } from "ol/proj";
 import DataTile from "ol/source/DataTile";
-import WebGLTile from "ol/layer/WebGLTile";
+import WebGLTile, { Options } from "ol/layer/WebGLTile";
 import { colorScale, ColorSchema } from "./colorScale";
 import TileGrid from "ol/tilegrid/TileGrid";
 
@@ -29,7 +29,7 @@ export interface HeatmapTileOptions {
   readonly valueRoundDigits?: number;
   readonly valuesFont?: string;
   readonly valuesColor?: string;
-  readonly olOptions: object; // WebGLTile options
+  readonly olOptions?: Options;
 }
 
 export default class HeatmapTile extends WebGLTile {
@@ -60,26 +60,28 @@ export default class HeatmapTile extends WebGLTile {
     this.tileGrid = options.tileGrid || undefined;
     this.projection = options.projection || "EPSG:3857";
     this.dataProjection = options.dataProjection || "EPSG:4326";
-    this.colorSchema = options.colorSchema || [
-      [0, "#CD0074"],
-      [21, "#7209AB"],
-      [43, "#3914B0"],
-      [64, "#1240AC"],
-      [106, "#009A9A"],
-      [128, "#00CC00"],
-      [149, "#9FEE00"],
-      [170, "#FFFF00"],
-      [191, "#FFD300"],
-      [213, "#FFAA00"],
-      [234, "#FF7400"],
-      [255, "#FF0000"],
-    ];
+    this.valueMiniMaxes = options.valueMiniMaxes || [0, 255];
+    this.colorSchema = options.colorSchema
+      ? this._convertSchema(options.colorSchema)
+      : [
+          [0, "#CD0074"],
+          [21, "#7209AB"],
+          [43, "#3914B0"],
+          [64, "#1240AC"],
+          [106, "#009A9A"],
+          [128, "#00CC00"],
+          [149, "#9FEE00"],
+          [170, "#FFFF00"],
+          [191, "#FFD300"],
+          [213, "#FFAA00"],
+          [234, "#FF7400"],
+          [255, "#FF0000"],
+        ];
     this.colors = colorScale(this.colorSchema);
     this.compression = options.compression || this.renderValues ? 64 : 4;
     this.dataBbox = options.dataBbox || [-180, -90, 180, 90];
     this.renderBbox = options.renderBbox || this.dataBbox;
 
-    this.valueMiniMaxes = options.valueMiniMaxes || [0, 255];
     this.valueRoundDigits = options.valueRoundDigits || 0;
     this.valuesFont = options.valuesFont || "24px sans-serif";
     this.valuesColor = options.valuesColor || "#fff";
@@ -92,8 +94,8 @@ export default class HeatmapTile extends WebGLTile {
   }
 
   setColorSchema(colorSchema: ColorSchema[]) {
-    this.colorSchema = colorSchema;
-    this.colors = colorScale(colorSchema);
+    this.colorSchema = this._convertSchema(colorSchema);
+    this.colors = colorScale(this.colorSchema);
   }
 
   setDataBbox(bbox: Bbox) {
@@ -145,22 +147,27 @@ export default class HeatmapTile extends WebGLTile {
 
   getValueFromCoord(x: number, y: number) {
     const coord = transform([x, y], this.projection, this.dataProjection);
-    return this._getGridValue(coord[0], coord[1]);
+    return this._from255(this._getGridValue(coord[0], coord[1]));
   }
 
   getValueFromLonLat(lon: number, lat: number) {
-    return this._scaleValue(this._getGridValue(lon, lat));
+    return this._from255(this._getGridValue(lon, lat));
   }
 
   refresh() {
-    // clear tileTextureCache_ by private field see https://github.com/openlayers/openlayers/issues/13051
-    // @ts-ignore
-    this.getRenderer().tileTextureCache_.clear();
+    this.getRenderer()?.clearCache();
     this.changed();
   }
 
-  private _scaleValue(value: number) {
+  private _from255(value: number) {
     return ((value * (this.valueMiniMaxes[1] - this.valueMiniMaxes[0])) / 255 + this.valueMiniMaxes[0]).toFixed(this.valueRoundDigits);
+  }
+
+  private _to255(value: number) {
+    return ((value - this.valueMiniMaxes[0]) * 255) / (this.valueMiniMaxes[1] - this.valueMiniMaxes[0]);
+  }
+  private _convertSchema(schema: ColorSchema[]): ColorSchema[] {
+    return schema.map((e) => [this._to255(e[0]), e[1]]);
   }
 
   private _updatePart() {
@@ -200,8 +207,11 @@ export default class HeatmapTile extends WebGLTile {
   }
 
   private _renderTiles() {
-    if (this.getSource()) {
+    const source = this.getSource();
+    if (source) {
       this.refresh();
+
+      // source.refresh();
     } else {
       const loader = this._getLoader();
 
@@ -250,7 +260,7 @@ export default class HeatmapTile extends WebGLTile {
       const step = (bbox[2] - bbox[0]) / this.size;
 
       const pixelRenderFunc = this.renderValues
-        ? (value: number, i: number, j: number) => context.fillText(this._scaleValue(value), i - half, this.size - j - half)
+        ? (value: number, i: number, j: number) => context.fillText(this._from255(value), i - half, this.size - j - half)
         : (value: number, i: number, j: number) => {
             context.fillStyle = this.colors(value);
             context.fillRect(i - half, this.size - j - half, this.compression, this.compression);

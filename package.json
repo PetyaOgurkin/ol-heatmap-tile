@@ -2,7 +2,7 @@
   "name": "@petyaogurkin/ol-heatmap-tile",
   "description": "ol plugin for rendering grayscale images",
   "private": false,
-  "version": "2.0.1",
+  "version": "2.1.0",
   "repository": "github:PetyaOgurkin/ol-heatmap-tile",
   "author": "PetyaOgurkin",
   "license": "MIT",

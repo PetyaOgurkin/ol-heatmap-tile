@@ -7,30 +7,32 @@ import TileGrid from "ol/tilegrid/TileGrid";
 type Grid = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array;
 
 type Data = {
-  readonly grid: Grid;
-  readonly width: number;
-  readonly height: number;
+  grid: Grid;
+  width: number;
+  height: number;
 };
 
 type Bbox = [number, number, number, number];
 
+type Mode = "matrix" | "heatmap";
+
 export interface HeatmapTileOptions {
-  readonly data?: Data;
-  readonly dataBbox?: Bbox;
-  readonly url?: string;
-  readonly renderBbox?: Bbox;
-  readonly tileGrid?: TileGrid;
-  readonly projection?: string;
-  readonly dataProjection?: string;
-  readonly compression?: number;
-  readonly colorSchema?: ColorSchema[];
-  readonly renderValues?: boolean;
-  readonly valueMiniMaxes?: [number, number];
-  readonly valueRoundDigits?: number;
-  readonly valuesFontFamily?: string;
-  readonly valuesFontSize?: string;
-  readonly valuesColor?: string;
-  readonly olOptions?: Options;
+  data?: Data;
+  dataBbox?: Bbox;
+  url?: string;
+  renderBbox?: Bbox;
+  tileGrid?: TileGrid;
+  projection?: string;
+  dataProjection?: string;
+  compression?: number;
+  colorSchema?: ColorSchema[];
+  mode?: Mode;
+  dataExtremes?: [number, number];
+  valueRoundDigits?: number;
+  fontFamily?: string;
+  fontSize?: string;
+  fontColor?: string;
+  webGLTileProps?: Options;
 }
 
 export default class HeatmapTile extends WebGLTile {
@@ -46,23 +48,23 @@ export default class HeatmapTile extends WebGLTile {
   private width: number = 0;
   private height: number = 0;
   private part: number[] = [0, 0];
-  private renderValues: boolean;
-  private valuesFontFamily: string;
-  private valuesFontSize: string;
-  private valuesColor: string;
-  private valueMiniMaxes: [number, number];
+  private mode: Mode;
+  private fontFamily: string;
+  private fontSize: string;
+  private fontColor: string;
+  private dataExtremes: [number, number];
   private valueRoundDigits: number;
   private size: number = 256;
   private colors: Function;
 
   constructor(options: HeatmapTileOptions) {
-    super({ ...options.olOptions, visible: false });
+    super({ ...options.webGLTileProps, visible: false });
 
-    this.renderValues = options.renderValues || false;
+    this.mode = options.mode || "heatmap";
     this.tileGrid = options.tileGrid || undefined;
     this.projection = options.projection || "EPSG:3857";
     this.dataProjection = options.dataProjection || "EPSG:4326";
-    this.valueMiniMaxes = options.valueMiniMaxes || [0, 255];
+    this.dataExtremes = options.dataExtremes || [0, 255];
     this.colorSchema = options.colorSchema
       ? this._convertSchema(options.colorSchema)
       : [
@@ -79,78 +81,112 @@ export default class HeatmapTile extends WebGLTile {
           [234, "#FF7400"],
           [255, "#FF0000"],
         ];
+
     this.colors = colorScale(this.colorSchema);
-    this.compression = options.compression || this.renderValues ? 64 : 4;
+    this.compression = options.compression || (this.mode === "matrix" ? 64 : 4);
     this.dataBbox = options.dataBbox || [-180, -90, 180, 90];
     this.renderBbox = options.renderBbox || this.dataBbox;
 
     this.valueRoundDigits = options.valueRoundDigits || 0;
-    this.valuesFontFamily =
-      options.valuesFontFamily || window.getComputedStyle(document.querySelector("html")!, null).getPropertyValue("font-family");
-    this.valuesFontSize = options.valuesFontSize || "1.2rem";
-    this.valuesColor = options.valuesColor || "#fff";
+    this.fontColor = options.fontColor || "#fff";
+    this.fontFamily = options.fontFamily || window.getComputedStyle(document.querySelector("html")!, null).getPropertyValue("font-family");
+    this.fontSize = options.fontSize || "1.2rem";
 
     if (options.data) {
-      this.setData(options.data);
+      this._setData(options.data);
     } else if (options.url) {
-      this.setUrl(options.url);
+      this._setUrl(options.url);
     }
   }
 
-  setColorSchema(colorSchema: ColorSchema[]) {
-    this.colorSchema = this._convertSchema(colorSchema);
-    this.colors = colorScale(this.colorSchema);
-  }
+  updateProps({
+    colorSchema,
+    compression,
+    data,
+    dataBbox,
+    dataExtremes,
+    dataProjection,
+    fontFamily,
+    fontSize,
+    fontColor,
+    mode,
+    projection,
+    renderBbox,
+    tileGrid,
+    url,
+    valueRoundDigits,
+  }: HeatmapTileOptions) {
+    if (mode) {
+      this.mode = mode;
+      if (this.mode === "heatmap") {
+        this.compression = 4;
+      }
 
-  setDataBbox(bbox: Bbox) {
-    this.dataBbox = bbox;
-    this.setRenderBbox(bbox);
-    this._updatePart();
-  }
+      if (this.mode === "matrix") {
+        this.compression = 64;
+      }
+    }
 
-  setRenderBbox(bbox: Bbox) {
-    this.renderBbox = bbox;
-  }
+    if (dataProjection) {
+      this.dataProjection = dataProjection;
+    }
 
-  setTileGrid(tileGrid: TileGrid) {
-    this.tileGrid = tileGrid;
-  }
+    if (dataExtremes) {
+      this.dataExtremes = dataExtremes;
+    }
 
-  setProjection(projection: string) {
-    this.projection = projection;
-  }
+    if (colorSchema) {
+      this.colorSchema = this._convertSchema(colorSchema);
+      this.colors = colorScale(this.colorSchema);
+    }
 
-  setData(data: Data) {
-    this.grid = data.grid;
-    this.width = data.width;
-    this.height = data.height;
-    this._updatePart();
-    this._renderTiles();
-  }
+    if (compression) {
+      this.compression = compression;
+    }
 
-  setUrl(url: string) {
-    this.url = url;
-    this._loadData();
-  }
+    if (dataBbox) {
+      this.dataBbox = dataBbox;
+      this.renderBbox = dataBbox;
+      this._updatePart();
+    }
 
-  setValuesFontFamily(valuesFontFamily: string) {
-    this.valuesFontFamily = valuesFontFamily;
-  }
+    if (renderBbox) {
+      this.renderBbox = renderBbox;
+    }
 
-  setValuesFontSize(valuesFontSize: string) {
-    this.valuesFontFamily = valuesFontSize;
-  }
+    if (tileGrid) {
+      this.tileGrid = tileGrid;
+    }
 
-  setValuesColor(valuesColor: string) {
-    this.valuesColor = valuesColor;
-  }
+    if (projection) {
+      this.projection = projection;
+    }
 
-  setValueMiniMaxes(valueMiniMaxes: [number, number]) {
-    this.valueMiniMaxes = valueMiniMaxes;
-  }
+    if (valueRoundDigits) {
+      this.valueRoundDigits = valueRoundDigits;
+    }
 
-  setValueRoundDigits(valueRoundDigits: number) {
-    this.valueRoundDigits = valueRoundDigits;
+    if (fontFamily) {
+      this.fontFamily = fontFamily;
+    }
+
+    if (fontSize) {
+      this.fontSize = fontSize;
+    }
+
+    if (fontColor) {
+      this.fontColor = fontColor;
+    }
+
+    if (data) {
+      return this._setData(data);
+    }
+
+    if (url) {
+      return this._setUrl(url);
+    }
+
+    this._setSource();
   }
 
   getValueFromCoord(x: number, y: number) {
@@ -162,18 +198,27 @@ export default class HeatmapTile extends WebGLTile {
     return this._from255(this._getGridValue(lon, lat));
   }
 
-  refresh() {
-    this.getRenderer()?.clearCache();
-    this.changed();
+  private _setData(data: Data) {
+    this.grid = data.grid;
+    this.width = data.width;
+    this.height = data.height;
+    this._updatePart();
+    this._setSource();
+  }
+
+  private _setUrl(url: string) {
+    this.url = url;
+    this._loadData();
   }
 
   private _from255(value: number) {
-    return ((value * (this.valueMiniMaxes[1] - this.valueMiniMaxes[0])) / 255 + this.valueMiniMaxes[0]).toFixed(this.valueRoundDigits);
+    return ((value * (this.dataExtremes[1] - this.dataExtremes[0])) / 255 + this.dataExtremes[0]).toFixed(this.valueRoundDigits);
   }
 
   private _to255(value: number) {
-    return ((value - this.valueMiniMaxes[0]) * 255) / (this.valueMiniMaxes[1] - this.valueMiniMaxes[0]);
+    return ((value - this.dataExtremes[0]) * 255) / (this.dataExtremes[1] - this.dataExtremes[0]);
   }
+
   private _convertSchema(schema: ColorSchema[]): ColorSchema[] {
     return schema.map((e) => [this._to255(e[0]), e[1]]);
   }
@@ -205,7 +250,7 @@ export default class HeatmapTile extends WebGLTile {
           imageArray[i / 4] = imageData[i];
         }
 
-        this.setData({ grid: imageArray, width: img.width, height: img.height });
+        this._setData({ grid: imageArray, width: img.width, height: img.height });
       }
     };
     if (this.url) {
@@ -214,37 +259,33 @@ export default class HeatmapTile extends WebGLTile {
     img.crossOrigin = "anonymous";
   }
 
-  private _renderTiles() {
-    const source = this.getSource();
-    if (source) {
-      this.refresh();
+  private _setSource() {
+    const loader = this._getLoader();
 
-      // source.refresh();
-    } else {
-      const loader = this._getLoader();
+    this.setSource(
+      new DataTile({
+        wrapX: true,
+        loader,
+        projection: this.projection,
+        tileGrid: this.tileGrid,
+        transition: 0,
+        interpolate: true,
+      })
+    );
 
-      this.setSource(
-        new DataTile({
-          wrapX: true,
-          loader,
-          projection: this.projection,
-          ...(this.tileGrid && { tileGrid: this.tileGrid }),
-          transition: 0,
-          interpolate: true,
-        })
-      );
-      this.setVisible(true);
-    }
+    this.setVisible(true);
   }
 
   private _getLoader() {
     const canvas = document.createElement("canvas");
     canvas.width = this.size;
     canvas.height = this.size;
-    const context = canvas.getContext("2d")!;
-    context.font = `${this.valuesFontSize} ${this.valuesFontFamily}`;
+    const context = canvas.getContext("2d", {
+      willReadFrequently: true,
+    })!;
+    context.font = `${this.fontSize} ${this.fontFamily}`;
 
-    context.fillStyle = this.valuesColor;
+    context.fillStyle = this.fontColor;
 
     const half = this.compression / 2;
 
@@ -268,12 +309,13 @@ export default class HeatmapTile extends WebGLTile {
       context.clearRect(0, 0, this.size, this.size);
       const step = (bbox[2] - bbox[0]) / this.size;
 
-      const pixelRenderFunc = this.renderValues
-        ? (value: number, i: number, j: number) => context.fillText(this._from255(value), i - half, this.size - j - half)
-        : (value: number, i: number, j: number) => {
-            context.fillStyle = this.colors(value);
-            context.fillRect(i - half, this.size - j - half, this.compression, this.compression);
-          };
+      const pixelRenderFunc =
+        this.mode === "matrix"
+          ? (value: number, i: number, j: number) => context.fillText(this._from255(value), i - half, this.size - j - half)
+          : (value: number, i: number, j: number) => {
+              context.fillStyle = this.colors(value);
+              context.fillRect(i - half, this.size - j - half, this.compression, this.compression);
+            };
 
       for (let i = 0; i <= this.size; i += this.compression) {
         for (let j = 0; j <= this.size; j += this.compression) {

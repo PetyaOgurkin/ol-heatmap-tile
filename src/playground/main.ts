@@ -18,7 +18,7 @@ new Map({
     }),
     new HeatmapTile({
       url: "./assets/temp.jpg",
-      olOptions: {
+      webGLTileProps: {
         opacity: 0.7,
       },
     }),

@@ -1,7 +1,7 @@
+import { Extent } from "ol/extent";
+import WebGLTile, { Options } from "ol/layer/WebGLTile";
 import { toLonLat, transform } from "ol/proj";
 import DataTile from "ol/source/DataTile";
-import WebGLTile, { Options } from "ol/layer/WebGLTile";
-import { colorScale, ColorSchema } from "./colorScale";
 import TileGrid from "ol/tilegrid/TileGrid";
 
 type Grid = Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array;
@@ -12,20 +12,19 @@ type Data = {
   height: number;
 };
 
-type Bbox = [number, number, number, number];
+type Mode = "heatmap" | "matrix";
 
-type Mode = "matrix" | "heatmap";
+type ColorSchema = [number, string][];
 
 export interface HeatmapTileOptions {
   data?: Data;
-  dataBbox?: Bbox;
+  dataBbox?: Extent;
   url?: string;
-  renderBbox?: Bbox;
+  renderBbox?: Extent;
   tileGrid?: TileGrid;
   projection?: string;
   dataProjection?: string;
-  compression?: number;
-  colorSchema?: ColorSchema[];
+  colorSchema?: ColorSchema;
   mode?: Mode;
   dataExtremes?: [number, number];
   valueRoundDigits?: number;
@@ -39,10 +38,9 @@ export default class HeatmapTile extends WebGLTile {
   private tileGrid: TileGrid | undefined;
   private projection: string;
   private dataProjection: string;
-  private colorSchema: ColorSchema[];
-  private compression: number;
-  private dataBbox: Bbox;
-  private renderBbox: Bbox;
+  private colorSchema: (string | number)[];
+  private dataBbox: Extent;
+  private renderBbox: Extent;
   private url?: string;
   private grid: Grid = new Uint8Array(0);
   private width: number = 0;
@@ -55,10 +53,12 @@ export default class HeatmapTile extends WebGLTile {
   private dataExtremes: [number, number];
   private valueRoundDigits: number;
   private size: number = 256;
-  private colors: Function;
 
   constructor(options: HeatmapTileOptions) {
-    super({ ...options.webGLTileProps, visible: false });
+    super({
+      ...options.webGLTileProps,
+      visible: false,
+    });
 
     this.mode = options.mode || "heatmap";
     this.tileGrid = options.tileGrid || undefined;
@@ -68,22 +68,32 @@ export default class HeatmapTile extends WebGLTile {
     this.colorSchema = options.colorSchema
       ? this._convertSchema(options.colorSchema)
       : [
-          [0, "#CD0074"],
-          [21, "#7209AB"],
-          [43, "#3914B0"],
-          [64, "#1240AC"],
-          [106, "#009A9A"],
-          [128, "#00CC00"],
-          [149, "#9FEE00"],
-          [170, "#FFFF00"],
-          [191, "#FFD300"],
-          [213, "#FFAA00"],
-          [234, "#FF7400"],
-          [255, "#FF0000"],
+          0,
+          "#CD0074",
+          0.08,
+          "#7209AB",
+          0.16,
+          "#3914B0",
+          0.25,
+          "#1240AC",
+          0.41,
+          "#009A9A",
+          0.5,
+          "#00CC00",
+          0.58,
+          "#9FEE00",
+          0.66,
+          "#FFFF00",
+          0.74,
+          "#FFD300",
+          0.83,
+          "#FFAA00",
+          0.91,
+          "#FF7400",
+          1,
+          "#FF0000",
         ];
 
-    this.colors = colorScale(this.colorSchema);
-    this.compression = options.compression || (this.mode === "matrix" ? 64 : 4);
     this.dataBbox = options.dataBbox || [-180, -90, 180, 90];
     this.renderBbox = options.renderBbox || this.dataBbox;
 
@@ -91,6 +101,12 @@ export default class HeatmapTile extends WebGLTile {
     this.fontColor = options.fontColor || "#fff";
     this.fontFamily = options.fontFamily || window.getComputedStyle(document.querySelector("html")!, null).getPropertyValue("font-family");
     this.fontSize = options.fontSize || "1.2rem";
+
+    if (this.mode === "heatmap") {
+      this.setStyle({
+        color: ["interpolate", ["linear"], ["band", 1], ...this.colorSchema],
+      });
+    }
 
     if (options.data) {
       this._setData(options.data);
@@ -101,7 +117,6 @@ export default class HeatmapTile extends WebGLTile {
 
   updateProps({
     colorSchema,
-    compression,
     data,
     dataBbox,
     dataExtremes,
@@ -118,12 +133,12 @@ export default class HeatmapTile extends WebGLTile {
   }: HeatmapTileOptions) {
     if (mode) {
       this.mode = mode;
-      if (this.mode === "heatmap") {
-        this.compression = 4;
-      }
-
       if (this.mode === "matrix") {
-        this.compression = 64;
+        this.setStyle({});
+      } else {
+        this.setStyle({
+          color: ["interpolate", ["linear"], ["band", 1], ...this.colorSchema],
+        });
       }
     }
 
@@ -135,13 +150,11 @@ export default class HeatmapTile extends WebGLTile {
       this.dataExtremes = dataExtremes;
     }
 
-    if (colorSchema) {
+    if (colorSchema && this.mode === "heatmap") {
       this.colorSchema = this._convertSchema(colorSchema);
-      this.colors = colorScale(this.colorSchema);
-    }
-
-    if (compression) {
-      this.compression = compression;
+      this.setStyle({
+        color: ["interpolate", ["linear"], ["band", 1], ...this.colorSchema],
+      });
     }
 
     if (dataBbox) {
@@ -219,8 +232,8 @@ export default class HeatmapTile extends WebGLTile {
     return ((value - this.dataExtremes[0]) * 255) / (this.dataExtremes[1] - this.dataExtremes[0]);
   }
 
-  private _convertSchema(schema: ColorSchema[]): ColorSchema[] {
-    return schema.map((e) => [this._to255(e[0]), e[1]]);
+  private _convertSchema(schema: ColorSchema): (string | number)[] {
+    return schema.flatMap((e) => [this._to255(e[0]) / 255, e[1]]);
   }
 
   private _updatePart() {
@@ -260,7 +273,7 @@ export default class HeatmapTile extends WebGLTile {
   }
 
   private _setSource() {
-    const loader = this._getLoader();
+    const loader = this.mode === "matrix" ? this._getMatrixLoader() : this._getHeatmapLoader();
 
     this.setSource(
       new DataTile({
@@ -276,7 +289,44 @@ export default class HeatmapTile extends WebGLTile {
     this.setVisible(true);
   }
 
-  private _getLoader() {
+  private _getHeatmapLoader() {
+    const half = 0.5;
+
+    const bboxConditionFunc = this._getBboxConditionFunc();
+    const transformFunc = this._getTransformCoordFunc();
+
+    return (z: number, x: number, y: number): Uint8Array => {
+      const bbox = this._getBbox(z, x, y);
+      const step = (bbox[2] - bbox[0]) / this.size;
+      const arr = new Uint8Array(this.size * this.size * 4);
+
+      for (let i = 0; i < this.size; i++) {
+        for (let j = 0; j < this.size; j++) {
+          const point = transformFunc(bbox[0] + step * (i + half), bbox[3] - step * (j + half));
+
+          if (!bboxConditionFunc(point[0], point[1])) continue;
+
+          const value = Math.round(this._getGridValue(point[0], point[1]));
+
+          if (isNaN(value)) {
+            arr[j * this.size * 4 + i * 4] = 0;
+            arr[j * this.size * 4 + i * 4 + 1] = 0;
+            arr[j * this.size * 4 + i * 4 + 2] = 0;
+            arr[j * this.size * 4 + i * 4 + 3] = 0;
+          } else {
+            arr[j * this.size * 4 + i * 4] = value;
+            arr[j * this.size * 4 + i * 4 + 1] = value;
+            arr[j * this.size * 4 + i * 4 + 2] = value;
+            arr[j * this.size * 4 + i * 4 + 3] = 255;
+          }
+        }
+      }
+
+      return arr;
+    };
+  }
+
+  private _getMatrixLoader() {
     const canvas = document.createElement("canvas");
     canvas.width = this.size;
     canvas.height = this.size;
@@ -284,53 +334,42 @@ export default class HeatmapTile extends WebGLTile {
       willReadFrequently: true,
     })!;
     context.font = `${this.fontSize} ${this.fontFamily}`;
-
     context.fillStyle = this.fontColor;
-
-    const half = this.compression / 2;
+    const half = 32;
 
     const bboxConditionFunc = this._getBboxConditionFunc();
     const transformFunc = this._getTransformCoordFunc();
-
-    return (z: number, x: number, y: number) => {
-      const tileGrid = this.getSource()?.getTileGrid();
-      if (!tileGrid) {
-        throw Error("oops");
-      }
-      const tileGridOrigin = tileGrid.getOrigin(z);
-      const tileSizeAtResolution = this.size * tileGrid.getResolution(z);
-      const bbox = [
-        tileGridOrigin[0] + tileSizeAtResolution * x,
-        tileGridOrigin[1] + tileSizeAtResolution * (-y - 1),
-        tileGridOrigin[0] + tileSizeAtResolution * (x + 1),
-        tileGridOrigin[1] + tileSizeAtResolution * -y,
-      ];
+    return (z: number, x: number, y: number): Uint8Array => {
+      const bbox = this._getBbox(z, x, y);
 
       context.clearRect(0, 0, this.size, this.size);
       const step = (bbox[2] - bbox[0]) / this.size;
 
-      const pixelRenderFunc =
-        this.mode === "matrix"
-          ? (value: number, i: number, j: number) => context.fillText(this._from255(value), i - half, this.size - j - half)
-          : (value: number, i: number, j: number) => {
-              context.fillStyle = this.colors(value);
-              context.fillRect(i - half, this.size - j - half, this.compression, this.compression);
-            };
-
-      for (let i = 0; i <= this.size; i += this.compression) {
-        for (let j = 0; j <= this.size; j += this.compression) {
+      for (let i = 0; i <= this.size; i += 64) {
+        for (let j = 0; j <= this.size; j += 64) {
           const point = transformFunc(bbox[0] + step * (i + half), bbox[1] + step * (j + half));
-          if (bboxConditionFunc(point[0], point[1])) {
-            const value = this._getGridValue(point[0], point[1]);
-            if (value || value === 0) {
-              pixelRenderFunc(value, i, j);
-            }
+          if (!bboxConditionFunc(point[0], point[1])) continue;
+          const value = this._getGridValue(point[0], point[1]);
+          if (value || value === 0) {
+            context.fillText(this._from255(value), i - half, this.size - j - half);
           }
         }
       }
 
-      return Promise.resolve(new Uint8Array(context.getImageData(0, 0, this.size, this.size).data.buffer));
+      return new Uint8Array(context.getImageData(0, 0, this.size, this.size).data.buffer);
     };
+  }
+
+  private _getBbox(z: number, x: number, y: number) {
+    const tileGrid = this.getSource()?.getTileGrid()!;
+    const tileGridOrigin = tileGrid.getOrigin(z);
+    const tileSizeAtResolution = this.size * tileGrid.getResolution(z);
+    return [
+      tileGridOrigin[0] + tileSizeAtResolution * x,
+      tileGridOrigin[1] + tileSizeAtResolution * (-y - 1),
+      tileGridOrigin[0] + tileSizeAtResolution * (x + 1),
+      tileGridOrigin[1] + tileSizeAtResolution * -y,
+    ];
   }
 
   private _getTransformCoordFunc() {

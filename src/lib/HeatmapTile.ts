@@ -31,6 +31,7 @@ export interface HeatmapTileOptions {
   fontFamily?: string;
   fontSize?: string;
   fontColor?: string;
+  compression?: number;
   webGLTileProps?: Options;
 }
 
@@ -53,6 +54,7 @@ export default class HeatmapTile extends WebGLTile {
   private dataExtremes: [number, number];
   private valueRoundDigits: number;
   private size: number = 256;
+  private compression: number = 2;
 
   constructor(options: HeatmapTileOptions) {
     super({
@@ -64,35 +66,27 @@ export default class HeatmapTile extends WebGLTile {
     this.tileGrid = options.tileGrid || undefined;
     this.projection = options.projection || "EPSG:3857";
     this.dataProjection = options.dataProjection || "EPSG:4326";
-    this.dataExtremes = options.dataExtremes || [0, 255];
-    this.colorSchema = options.colorSchema
-      ? this._convertSchema(options.colorSchema)
-      : [
-          0,
-          "#CD0074",
-          0.08,
-          "#7209AB",
-          0.16,
-          "#3914B0",
-          0.25,
-          "#1240AC",
-          0.41,
-          "#009A9A",
-          0.5,
-          "#00CC00",
-          0.58,
-          "#9FEE00",
-          0.66,
-          "#FFFF00",
-          0.74,
-          "#FFD300",
-          0.83,
-          "#FFAA00",
-          0.91,
-          "#FF7400",
-          1,
-          "#FF0000",
-        ];
+    this.dataExtremes = options.dataExtremes || [-60, 50];
+    this.compression = options.compression || 2;
+    this.colorSchema = this._convertSchema(
+      options.colorSchema || [
+        [-40, "#E3E3E3"],
+        [-30, "#F3A5F3"],
+        [-20, "#8E108E"],
+        [-15, "#291E6A"],
+        [-10, "#5650AB"],
+        [-5, "#4178BE"],
+        [0, "#4FB296"],
+        [5, "#5BC94C"],
+        [10, "#B7DA40"],
+        [15, "#E1CE39"],
+        [20, "#E09F41"],
+        [25, "#DB6C54"],
+        [30, "#B73466"],
+        [40, "#6B1527"],
+        [50, "#2B0001"],
+      ]
+    );
 
     this.dataBbox = options.dataBbox || [-180, -90, 180, 90];
     this.renderBbox = options.renderBbox || this.dataBbox;
@@ -102,11 +96,7 @@ export default class HeatmapTile extends WebGLTile {
     this.fontFamily = options.fontFamily || window.getComputedStyle(document.querySelector("html")!, null).getPropertyValue("font-family");
     this.fontSize = options.fontSize || "1.2rem";
 
-    if (this.mode === "heatmap") {
-      this.setStyle({
-        color: ["interpolate", ["linear"], ["band", 1], ...this.colorSchema],
-      });
-    }
+    this.setStyle(this._getStyle());
 
     if (options.data) {
       this._setData(options.data);
@@ -130,16 +120,11 @@ export default class HeatmapTile extends WebGLTile {
     tileGrid,
     url,
     valueRoundDigits,
+    compression,
   }: HeatmapTileOptions) {
     if (mode) {
       this.mode = mode;
-      if (this.mode === "matrix") {
-        this.setStyle({});
-      } else {
-        this.setStyle({
-          color: ["interpolate", ["linear"], ["band", 1], ...this.colorSchema],
-        });
-      }
+      this.setStyle(this._getStyle());
     }
 
     if (dataProjection) {
@@ -152,9 +137,7 @@ export default class HeatmapTile extends WebGLTile {
 
     if (colorSchema && this.mode === "heatmap") {
       this.colorSchema = this._convertSchema(colorSchema);
-      this.setStyle({
-        color: ["interpolate", ["linear"], ["band", 1], ...this.colorSchema],
-      });
+      this.setStyle(this._getStyle());
     }
 
     if (dataBbox) {
@@ -173,6 +156,10 @@ export default class HeatmapTile extends WebGLTile {
 
     if (projection) {
       this.projection = projection;
+    }
+
+    if (compression) {
+      this.compression = compression;
     }
 
     if (valueRoundDigits) {
@@ -211,6 +198,14 @@ export default class HeatmapTile extends WebGLTile {
     return this._from255(this._getGridValue(lon, lat));
   }
 
+  private _getStyle() {
+    if (this.mode === "matrix") return {};
+
+    return {
+      color: ["interpolate", ["linear"], ["+", ["band", 1], ["band", 4]], 0, "transparent", ...this.colorSchema],
+    };
+  }
+
   private _setData(data: Data) {
     this.grid = data.grid;
     this.width = data.width;
@@ -233,7 +228,7 @@ export default class HeatmapTile extends WebGLTile {
   }
 
   private _convertSchema(schema: ColorSchema): (string | number)[] {
-    return schema.flatMap((e) => [this._to255(e[0]) / 255, e[1]]);
+    return schema.flatMap((e) => [1 + this._to255(e[0]) / 255, e[1]]);
   }
 
   private _updatePart() {
@@ -290,7 +285,7 @@ export default class HeatmapTile extends WebGLTile {
   }
 
   private _getHeatmapLoader() {
-    const half = 0.5;
+    const half = this.compression / 2;
 
     const bboxConditionFunc = this._getBboxConditionFunc();
     const transformFunc = this._getTransformCoordFunc();
@@ -300,24 +295,22 @@ export default class HeatmapTile extends WebGLTile {
       const step = (bbox[2] - bbox[0]) / this.size;
       const arr = new Uint8Array(this.size * this.size * 4);
 
-      for (let i = 0; i < this.size; i++) {
-        for (let j = 0; j < this.size; j++) {
+      for (let i = 0; i < this.size; i += this.compression) {
+        for (let j = 0; j < this.size; j += this.compression) {
           const point = transformFunc(bbox[0] + step * (i + half), bbox[3] - step * (j + half));
 
           if (!bboxConditionFunc(point[0], point[1])) continue;
 
           const value = Math.round(this._getGridValue(point[0], point[1]));
+          if (isNaN(value)) continue;
 
-          if (isNaN(value)) {
-            arr[j * this.size * 4 + i * 4] = 0;
-            arr[j * this.size * 4 + i * 4 + 1] = 0;
-            arr[j * this.size * 4 + i * 4 + 2] = 0;
-            arr[j * this.size * 4 + i * 4 + 3] = 0;
-          } else {
-            arr[j * this.size * 4 + i * 4] = value;
-            arr[j * this.size * 4 + i * 4 + 1] = value;
-            arr[j * this.size * 4 + i * 4 + 2] = value;
-            arr[j * this.size * 4 + i * 4 + 3] = 255;
+          for (let k = 0; k < this.compression; k++) {
+            for (let l = 0; l < this.compression; l++) {
+              arr[(j + k) * this.size * 4 + (i + l) * 4] = value;
+              arr[(j + k) * this.size * 4 + (i + l) * 4 + 1] = value;
+              arr[(j + k) * this.size * 4 + (i + l) * 4 + 2] = value;
+              arr[(j + k) * this.size * 4 + (i + l) * 4 + 3] = 255;
+            }
           }
         }
       }

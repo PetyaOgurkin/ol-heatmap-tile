@@ -14,12 +14,11 @@ new Map({
   layers: [
     new TileLayer({
       source: new OSM(),
-      preload: Infinity,
     }),
     new HeatmapTile({
-      url: "./assets/temp.jpg",
+      url: "./assets/temp.png",
       webGLTileProps: {
-        opacity: 0.5,
+        opacity: 0.7,
       },
     }),
   ],

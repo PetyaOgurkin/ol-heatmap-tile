@@ -2,7 +2,7 @@
   "name": "@petyaogurkin/ol-heatmap-tile",
   "description": "ol plugin for rendering grayscale images",
   "private": false,
-  "version": "2.3.0",
+  "version": "2.3.1",
   "repository": "github:PetyaOgurkin/ol-heatmap-tile",
   "author": "PetyaOgurkin",
   "license": "MIT",
@@ -22,6 +22,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.30",
+    "@types/proj4": "^2.5.5",
+    "proj4": "^2.11.0",
     "typescript": "^5.4.3",
     "vite": "^5.2.6",
     "vite-plugin-dts": "^3.8.1"
